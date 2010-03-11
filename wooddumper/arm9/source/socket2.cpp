@@ -80,7 +80,6 @@ void CSocket2::Connect(const char* anAddress,unsigned short aPort)
     Panic();
   }
   sa.sin_port=htons(aPort);
-  iprintf("%lx:%x\n",sa.sin_addr.s_addr,sa.sin_port);
   if(connect(iSocket,(const sockaddr*)&sa,sizeof(sa))<0)
   {
     iprintf("connect error: %d\n",errno);
@@ -97,7 +96,7 @@ void CSocket2::Listen(void)
   }
 }
 
-CSocket2* CSocket2::Accept(void)
+CSocket2* CSocket2::Accept(bool aWait)
 {
   sockaddr_in clientAddr;
   int clientAddrLen=sizeof(clientAddr);
@@ -109,8 +108,12 @@ CSocket2* CSocket2::Accept(void)
     {
       if(errno==EAGAIN)
       {
-        swiWaitForVBlank();
-        continue;
+        if(aWait)
+        {
+          swiWaitForVBlank();
+          continue;
+        }
+        else return NULL;
       }
       iprintf("accept error: %d, %d\n",newSocket,errno);
       Panic();
@@ -141,6 +144,11 @@ int CSocket2::Receive(char* aBuffer,int aSize,bool aWait)
           break;
         }
         continue;
+      }
+      if(errno==ECONNRESET)
+      {
+        lenb=0;
+        break;
       }
       iprintf("recv error: %d, %d\n",lenb,errno);
       Panic();

@@ -26,13 +26,14 @@ class CCard
   public:
     CCard();
     ~CCard();
-    void Init(void);
+    bool Init(void);
     const u8* SecureArea(void) {return iSecureArea;};
     u32 SecureAreaSize(void) {return EInitAreaSize;};
     u32 CartSize(void) {return (128*1024)<<iHeader->deviceSize;};
     const char* Name(void) {return iName;};
     const u8* Buffer(u32 anAddress);
     u32 BufferSize(void) {return EBufferSize;};
+    static int Key(void);
   private:
     u8* iSecureArea;
     u8* iBuffer;
@@ -44,6 +45,7 @@ class CCard
     bool iCheapCard;
     u32 iGameCode;
     char iName[5];
+    bool iOk;
   private:
     enum
     {
@@ -66,7 +68,6 @@ class CCard
     } iKey1;
   private:
     void Panic(void);
-    int Key(void);
     void Reset(void);
     void Header(u8* aHeader);
     void ReadHeader(void);
@@ -75,6 +76,7 @@ class CCard
     void CreateEncryptedCommand(u8 aCommand,u8* aCmdData,u32 aBlock);
     void Delay(u16 aTimeout);
     void DecryptSecureArea(void);
+    void GetIDSafe(uint32 flags,const uint8* command);
   private: //encryption
     void InitKey(u32 aGameCode,bool aType);
     void ApplyKey(void);

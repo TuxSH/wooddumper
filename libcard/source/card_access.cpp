@@ -25,7 +25,7 @@ void CCard::Panic(void)
   while(true) swiWaitForVBlank();
 }
 
-CCard::CCard(): iSecureArea(NULL),iBuffer(NULL),iCardId(0),iCardHash(NULL),iFlags(0),iCheapCard(false),iGameCode(0)
+CCard::CCard(): iSecureArea(NULL),iBuffer(NULL),iCardId(0),iCardHash(NULL),iFlags(0),iCheapCard(false),iGameCode(0),iOk(true)
 {
   iSecureArea=new u8[EInitAreaSize];
   memset(iSecureArea,0,EInitAreaSize);
@@ -44,17 +44,20 @@ CCard::~CCard()
 int CCard::Key(void)
 {
   scanKeys();
-  return(keysUp());
+  return keysUp();
 }
 
-void CCard::Init(void)
+bool CCard::Init(void)
 {
   iprintf("Set a Target card.\n<A>:OK\n");
   while(!(Key()&KEY_A));
+  iOk=true;
+  memset(iSecureArea,0,EInitAreaSize);
   ReadHeader();
   ReadSecureArea();
   memcpy(iName,iHeader->gameCode,4);
   iName[4]=0;
+  return iOk;
 }
 
 void CCard::Reset(void)
@@ -105,7 +108,27 @@ void CCard::ReadHeader(void)
   iprintf("card id: 0x%x\n",iCardId);
   while(CARD_CR2&CARD_BUSY) ;
   iCheapCard=iCardId&0x80000000;
-  Header(iSecureArea);
+  if(iOk) Header(iSecureArea);
+}
+
+void CCard::GetIDSafe(uint32 flags,const uint8* command)
+{
+  u32 data;
+  cardWriteCommand(command);
+  CARD_CR2=flags|CARD_BLK_SIZE(7);
+  do
+  {
+    if(CARD_CR2&CARD_DATA_READY)
+    {
+      data=CARD_DATA_RD;
+      if(data!=iCardId)
+      {
+        printf("secure cardid fail:%x\n",data);
+        iOk=false;
+        break;
+      }
+    }
+  } while(CARD_CR2&CARD_BUSY);
 }
 
 void CCard::ReadSecureArea(void)
@@ -144,7 +167,8 @@ void CCard::ReadSecureArea(void)
     cardPolledTransfer(flagsKey1,NULL,0,cmdData);
     Delay(iHeader->readTimeout);
   }
-  cardPolledTransfer(flagsKey1|CARD_BLK_SIZE(7),NULL,0,cmdData);
+  GetIDSafe(flagsKey1,cmdData);
+  if(!iOk) return;
 
   for(int secureBlockNumber=4;secureBlockNumber<8;++secureBlockNumber)
   {
@@ -185,7 +209,7 @@ void CCard::ReadSecureArea(void)
   else
   {
     iprintf("secure area error\n");
-    Panic();
+    iOk=false;
   }
 }
 
