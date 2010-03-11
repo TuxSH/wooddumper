@@ -17,6 +17,7 @@
 */
 
 #include <nds.h>
+#include <time.h>
 #include <stdio.h>
 #include <sys/dirent.h>
 #include <errno.h>
@@ -28,58 +29,98 @@
 #include <fat.h>
 
 #include "card_access.h"
+#include "../../../version.h"
 
-static bool Dump(void)
+static bool DumpInternal(FILE* aF,CCard* aCard)
 {
-  CCard* card=new CCard;
-  card->Init();
-  char filename[128];
-  sprintf(filename,"fat:/%s.nds",card->Name());
-
-  FILE* f=fopen(filename,"wb");
-  if(f)
+  bool result=true;
+  u32 cardSize=aCard->CartSize(),pos=0,block=aCard->BufferSize();
+  u32 written=fwrite(aCard->SecureArea(),1,aCard->SecureAreaSize(),aF);
+  if(written!=aCard->SecureAreaSize())
   {
-    u32 cardSize=card->CartSize(),pos=0,block=card->BufferSize();
-    u32 written=fwrite(card->SecureArea(),1,card->SecureAreaSize(),f);
-    if(written!=card->SecureAreaSize())
-    {
-      iprintf("write(1) error\n");
-      fclose(f);
-      return false;
-    }
-    pos+=card->SecureAreaSize();
+    iprintf("write(1) error\n");
+    result=false;
+  }
+  if(result)
+  {
+    pos+=aCard->SecureAreaSize();
     while(pos<cardSize)
     {
-      u32 written=fwrite(card->Buffer(pos),1,block,f);
+      u32 written=fwrite(aCard->Buffer(pos),1,block,aF);
       if(written!=block)
       {
         iprintf("write(2) error\n");
-        fclose(f);
-        return false;
+        result=false;
+        break;
       }
       pos+=block;
       iprintf("\x1b[32Ddumped %u bytes",pos);
     }
     iprintf("\n");
-    fclose(f);
   }
-  else
+  return result;
+}
+
+static bool Dump(void)
+{
+  bool result=false;
+  CCard* card=new CCard;
+  if(card->Init())
   {
-    iprintf("open file error\n");
-    return false;
+    char filename[128];
+    time_t epochTime;
+    tm timeParts;
+
+    if(time(&epochTime)==(time_t)-1)
+    {
+      memset(&timeParts,0,sizeof(timeParts));
+    }
+    else
+    {
+      localtime_r(&epochTime,&timeParts);
+    }
+
+    sprintf(filename,"fat:/%04d-%02d-%02d-%02d-%02d-%02d-%s.nds",timeParts.tm_year+1900,timeParts.tm_mon+1,timeParts.tm_mday,timeParts.tm_hour,timeParts.tm_min,timeParts.tm_sec,card->Name());
+
+    FILE* f=fopen(filename,"wb");
+    if(f)
+    {
+      result=DumpInternal(f,card);
+      fclose(f);
+    }
+    else
+    {
+      iprintf("open file error\n");
+    }
   }
-  return true;
+  delete card;
+  return result;
 }
 
 int main(void)
 {
   sysSetBusOwners(BUS_OWNER_ARM9,BUS_OWNER_ARM9);
-  consoleDemoInit();
+  PrintConsole topScreen;
+  PrintConsole bottomScreen;
+  videoSetMode(MODE_0_2D);
+  videoSetModeSub(MODE_0_2D);
+  vramSetBankA(VRAM_A_MAIN_BG);
+  vramSetBankC(VRAM_C_SUB_BG);
+  consoleInit(&topScreen,3,BgType_Text4bpp,BgSize_T_256x256,31,0,true,true);
+  consoleInit(&bottomScreen,3,BgType_Text4bpp,BgSize_T_256x256,31,0,false, true);
+
+  consoleSelect(&topScreen);
+  iprintf("version: %s\n",WOOD_VERSION);
+  consoleSelect(&bottomScreen);
 
   if(fatInitDefault())
   {
-    if(Dump()) iprintf("dump success\n");
-    else iprintf("dump fail\n");
+    while(true)
+    {
+      if(Dump()) iprintf("\x1b[32;1mdump success.\x1b[39;0m");
+      else iprintf("\x1b[31;1mdump fail.\x1b[39;0m");
+      iprintf(" EXTRACT card.\n\n");
+    }
   }
   else iprintf("fat init fail\n");
 

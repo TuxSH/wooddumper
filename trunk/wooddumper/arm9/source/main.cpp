@@ -23,6 +23,7 @@
 #include <netinet/in.h>
 #include "socket2.h"
 #include "card_access.h"
+#include "../../../version.h"
 
 CCard* card=NULL;
 char line[256];
@@ -130,7 +131,7 @@ void process(CSocket2* aConn)
         {
           if(!callbackData.iAbor)
           {
-            iprintf("send error 0\n");
+            iprintf("send error (0)\n");
             while(true) swiWaitForVBlank();
           }
         }
@@ -153,7 +154,7 @@ void process(CSocket2* aConn)
           {
             if(!callbackData.iAbor)
             {
-              iprintf("send error 1\n");
+              iprintf("send error (1)\n");
               while(true) swiWaitForVBlank();
             }
           }
@@ -168,7 +169,7 @@ void process(CSocket2* aConn)
             if(sended!=block)
             {
               if(callbackData.iAbor) break;
-              iprintf("send error 2\n");
+              iprintf("send error (2)\n");
               while(true) swiWaitForVBlank();
             }
             pos+=block;
@@ -196,7 +197,6 @@ void process(CSocket2* aConn)
     else if(check(buffer,"REST"))
     {
       sscanf(buffer+5,"%u",&restore);
-      iprintf("restore: %u\n",restore);
       sprintf(line,"350 Restarting at %u. Send RETR to initiate transfer\r\n",restore);
       aConn->Send(line);
     }
@@ -207,15 +207,50 @@ void process(CSocket2* aConn)
   }
 }
 
+void processCard(void)
+{
+  if(card)
+  {
+    while(true)
+    {
+      if(card->Init())
+      {
+        iprintf("\x1b[32;1mcard init success.\x1b[39;0m\n");
+        break;
+      }
+      else
+      {
+        iprintf("\x1b[31;1mcard init fail.\x1b[39;0m EXTRACT card.\n\n");
+      }
+    }
+  }
+}
+
+void printAccept(void)
+{
+  iprintf("accept\nPress <B> to change card\n");
+}
+
 int main(void)
 {
   sysSetBusOwners(BUS_OWNER_ARM9,BUS_OWNER_ARM9);
   setlocale(LC_ALL,"C-UTF-8");
 
-  consoleDemoInit();  //setup the sub screen for printing
+  PrintConsole topScreen;
+  PrintConsole bottomScreen;
+  videoSetMode(MODE_0_2D);
+  videoSetModeSub(MODE_0_2D);
+  vramSetBankA(VRAM_A_MAIN_BG);
+  vramSetBankC(VRAM_C_SUB_BG);
+  consoleInit(&topScreen,3,BgType_Text4bpp,BgSize_T_256x256,31,0,true,true);
+  consoleInit(&bottomScreen,3,BgType_Text4bpp,BgSize_T_256x256,31,0,false, true);
+
+  consoleSelect(&topScreen);
+  iprintf("version: %s\n",WOOD_VERSION);
+  consoleSelect(&bottomScreen);
 
   card=new CCard;
-  card->Init();
+  processCard();
 
   iprintf("Connecting via WFC data ...\n");
 
@@ -228,14 +263,27 @@ int main(void)
     iprintf("Connected\n");
     in_addr ip;
     ip=Wifi_GetIPInfo(NULL,NULL,NULL,NULL);
+    consoleSelect(&topScreen);
     iprintf("ip: %s\n",inet_ntoa(ip));
+    consoleSelect(&bottomScreen);
     CSocket2* server=new CSocket2(true);
     server->Bind(21);
     server->Listen();
     while(true)
     {
-      iprintf("accept\n");
-      CSocket2* conn=server->Accept();
+      printAccept();
+      CSocket2* conn;
+      do
+      {
+        conn=server->Accept(false);
+        if(conn) break;
+        if(CCard::Key()&KEY_B)
+        {
+          processCard();
+          printAccept();
+        }
+        swiWaitForVBlank();
+      } while(true);
       process(conn);
       delete conn;
     }

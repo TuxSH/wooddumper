@@ -28,7 +28,7 @@ class CSocket2
     void Bind(unsigned short aPort);
     void Connect(const char* anAddress,unsigned short aPort);
     void Listen(void);
-    CSocket2* Accept(void);
+    CSocket2* Accept(bool aWait);
     int Receive(char* aBuffer,int aSize,bool aWait);
     int Send(const char* aBuffer,int aSize,TSendCallback aCallBack,void *aParam);
     int Send(const char* aBuffer);
