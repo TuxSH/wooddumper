@@ -204,12 +204,13 @@ void CCard::ReadSecureArea(void)
   {
     secureArea[0]=0xe7ffdeff;
     secureArea[1]=0xe7ffdeff;
-    iprintf("secure area ok\n");
+    iprintf("secure area ok.\n");
   }
   else
   {
-    iprintf("secure area error\n");
-    iOk=false;
+    iprintf("\x1b[31;1msecure area error.\x1b[39;0m\n");
+    //dragon quest 5 has invalid secure area. really.
+    //iOk=false;
   }
 }
 
