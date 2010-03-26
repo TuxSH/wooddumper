@@ -34,6 +34,7 @@ struct TCallbackData
   CSocket2* iConn;
   bool iAbor;
 };
+char localIP[32];
 
 bool check(const char* aBuffer,const char* aCommand)
 {
@@ -66,6 +67,10 @@ void process(CSocket2* aConn)
   char address[44]="";
   unsigned short port=0;
   u32 restore=0;
+  bool passive=false;
+  CSocket2* passiveConn=new CSocket2(false);
+  passiveConn->Bind(4000);
+  passiveConn->Listen();
   while(true)
   {
     int size=aConn->Receive(buffer,1023,true);
@@ -107,20 +112,41 @@ void process(CSocket2* aConn)
     else if(check(buffer,"LIST"))
     {
       aConn->Send("150 Opening connection\r\n");
-      CSocket2* list=new CSocket2(false);
-      list->Connect(address,port);
-      sprintf(line,"-rw-r--r--    1 root       root       %10u Jan  1  2004 %s.nds\r\n",card->CartSize(),card->Name());
+      CSocket2* list=NULL;
+      if(passive)
+      {
+        list=passiveConn->Accept(true);
+      }
+      else
+      {
+        list=new CSocket2(false);
+        list->Connect(address,port);
+      }
+      sprintf(line,"-rw-r--r--    1 ftp      ftp    %10u Jan 01  2004 %s.nds\r\n",card->CartSize(),card->Name());
       list->Send(line);
       delete list;
       aConn->Send("226 Transfer Complete\r\n");
+    }
+    else if(check(buffer,"RETR /\r\n"))
+    {
+      aConn->Send("550 File not found\r\n");
     }
     else if(check(buffer,"RETR"))
     {
       TCallbackData callbackData={aConn,false};
       aConn->Send("150 Opening BINARY mode data connection\r\n");
-      CSocket2* data=new CSocket2(false);
-      data->Connect(address,port);
-      data->SetNonBlock(true);
+
+      CSocket2* data=NULL;
+      if(passive)
+      {
+        data=passiveConn->Accept(true);
+      }
+      else
+      {
+        data=new CSocket2(false);
+        data->Connect(address,port);
+        data->SetNonBlock(true);
+      }
 
       u32 cardSize=card->CartSize(),pos=0,block=card->BufferSize();
       if(card->SecureAreaSize()>restore)
@@ -200,11 +226,28 @@ void process(CSocket2* aConn)
       sprintf(line,"350 Restarting at %u. Send RETR to initiate transfer\r\n",restore);
       aConn->Send(line);
     }
+    else if(check(buffer,"PASV"))
+    {
+      sprintf(line,"227 Entering Passive Mode (%s,15,160)\r\n",localIP);
+      size_t lineLen=strlen(line);
+      for(size_t ii=0;ii<lineLen;++ii) if(line[ii]=='.') line[ii]=',';
+      aConn->Send(line);
+      passive=true;
+    }
+    else if(check(buffer,"NOOP"))
+    {
+      aConn->Send("200 OK\r\n");
+    }
+    else if(check(buffer,"CWD"))
+    {
+      aConn->Send("250 CWD command successful\r\n");
+    }
     else
     {
       aConn->Send("500 command not recognized\r\n");
     }
   }
+  delete passiveConn;
 }
 
 void processCard(void)
@@ -264,7 +307,8 @@ int main(void)
     in_addr ip;
     ip=Wifi_GetIPInfo(NULL,NULL,NULL,NULL);
     consoleSelect(&topScreen);
-    iprintf("ip: %s\n",inet_ntoa(ip));
+    strcpy(localIP,inet_ntoa(ip));
+    iprintf("ip: %s\n",localIP);
     consoleSelect(&bottomScreen);
     CSocket2* server=new CSocket2(true);
     server->Bind(21);
